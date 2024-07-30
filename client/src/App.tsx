@@ -1,26 +1,24 @@
 import React from "react";
-import logo from "./logo.svg";
-import "./App.css";
+import styled from "styled-components";
+import { Slate } from "./components/slate";
 
-function App() {
+export const App = () => {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Body>
+      <Slate />
+    </Body>
   );
-}
+};
 
-export default App;
+const Body = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(180deg, #202430 0%, #1d2028 60%);
+  height: 100%;
+  min-height: 100vh;
+  color: #c6c8d1;
+  overflow: hidden;
+`;
