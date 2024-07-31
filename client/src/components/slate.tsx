@@ -11,18 +11,23 @@ export const Slate = () => {
   // state
   const [testStarted, _setTestStarted] = useState(false);
   const [startTime, _setStartTime] = useState(0);
-  const [words, setWords] = useState<string[]>([]);
+  const [wordStartTime, _setWordStartTime] = useState(0);
+  const [words, _setWords] = useState<string[]>([]);
   const [userInput, _setUserInput] = useState([""]);
   const [currentWordIndex, _setCurrentWordIndex] = useState(0);
   const [currentCharIndex, _setCurrentCharIndex] = useState(0);
   const [wpm, setWpm] = useState(0);
+  const [wpmWords, _setWpmWords] = useState<number[]>([]);
 
   // ref
   const testStartedRef = useRef(testStarted);
   const startTimeRef = useRef(startTime);
+  const wordStartTimeRef = useRef(wordStartTime);
+  const wordsRef = useRef(words);
   const userInputRef = useRef(userInput);
   const currentWordIndexRef = useRef(currentWordIndex);
   const currentCharIndexRef = useRef(currentCharIndex);
+  const wpmWordsRef = useRef(wpmWords);
 
   const setTestStarted = (b: boolean) => {
     testStartedRef.current = b;
@@ -31,6 +36,14 @@ export const Slate = () => {
   const setStartTime = (n: number) => {
     startTimeRef.current = n;
     _setStartTime(n);
+  };
+  const setWordStartTime = (n: number) => {
+    wordStartTimeRef.current = n;
+    _setWordStartTime(n);
+  };
+  const setWords = (a: string[]) => {
+    wordsRef.current = a;
+    _setWords(a);
   };
   const setUserInput = (a: string[]) => {
     userInputRef.current = a;
@@ -44,6 +57,10 @@ export const Slate = () => {
     currentCharIndexRef.current = n;
     _setCurrentCharIndex(n);
   };
+  const setWpmWords = (a: number[]) => {
+    wpmWordsRef.current = a;
+    _setWpmWords(a);
+  };
 
   // methods
   const resetTest = () => {
@@ -52,6 +69,8 @@ export const Slate = () => {
     setCurrentCharIndex(0);
     setWpm(0);
     setTestStarted(false);
+    setWpmWords([]);
+    setWordStartTime(0);
     generateWords();
   };
 
@@ -67,7 +86,7 @@ export const Slate = () => {
   };
 
   const handleKeyPress = (e: KeyboardEvent) => {
-    if (e.key === "Alt") return resetTest();
+    if (e.key === "Control") return resetTest();
     if (!keys.includes(e.key)) return;
 
     if (!testStartedRef.current) {
@@ -103,7 +122,7 @@ export const Slate = () => {
     setUserInput([...previousWords, currentWord, ""]);
     setCurrentWordIndex(currentWordIndexRef.current + 1);
     setCurrentCharIndex(0);
-    calcWpm();
+    processWpm();
   };
 
   const handleCharacterInput = (
@@ -115,11 +134,52 @@ export const Slate = () => {
     setCurrentCharIndex(currentCharIndexRef.current + 1);
   };
 
-  const calcWpm = () => {
-    const timeElapsed = (performance.now() - startTimeRef.current) / 1000;
-    const characters = userInputRef.current.join(" ").length;
-    const wpm = characters / 5 / (timeElapsed / 60);
-    setWpm(Math.round(wpm));
+  const processWpm = () => {
+    const now = performance.now();
+    const timeElapsed = (now - startTimeRef.current) / 1000;
+    const validWords = userInputRef.current.filter((word, index) => {
+      return word === wordsRef.current[index];
+    });
+    const characters = validWords.join(" ").length + 1;
+    const wpm = calcWpm(characters, timeElapsed);
+    if (characters === 1) {
+      setWpm(0);
+    } else {
+      setWpm(wpm);
+    }
+
+    const completedIndex = userInputRef.current.length - 2;
+    if (completedIndex < 0 || !wordsRef.current[completedIndex]) return;
+
+    const completedWord = userInputRef.current[completedIndex];
+    const isCompletedWordCorrect =
+      completedWord === wordsRef.current[completedIndex];
+    const isCompletedWordCalculated =
+      wpmWordsRef.current[completedIndex] !== undefined;
+
+    if (isCompletedWordCalculated) {
+      setWordStartTime(now);
+      return;
+    }
+
+    if (wpmWordsRef.current.length === 0 && isCompletedWordCorrect) {
+      setWpmWords([wpm]);
+      setWordStartTime(now);
+      return;
+    }
+
+    if (isCompletedWordCorrect) {
+      const timeElapsed = (now - wordStartTimeRef.current) / 1000;
+      const wpm = calcWpm(completedWord.length + 1, timeElapsed);
+      setWpmWords([...wpmWordsRef.current, wpm]);
+    } else {
+      setWpmWords([...wpmWordsRef.current, 0]);
+    }
+    setWordStartTime(now);
+  };
+
+  const calcWpm = (numOfCharacters: number, timeElapsed: number) => {
+    return Math.round(numOfCharacters / 5 / (timeElapsed / 60));
   };
 
   // lifecycle
@@ -137,35 +197,40 @@ export const Slate = () => {
       <div>WPM: {wpm}</div>
       <StyledSlate>
         {words.map((word, wordIndex) => (
-          <Word key={wordIndex}>
-            {word.split("").map((char, charIndex) => {
-              const isWaiting =
-                wordIndex > currentWordIndex ||
-                (wordIndex === currentWordIndex &&
-                  charIndex >= currentCharIndex);
+          <WordBox key={"box" + wordIndex}>
+            <WPMWord key={"wpm" + wordIndex}>
+              {wpmWords[wordIndex] > 0 && wpmWords[wordIndex]}
+            </WPMWord>
+            <Word key={wordIndex}>
+              {word.split("").map((char, charIndex) => {
+                const isWaiting =
+                  wordIndex > currentWordIndex ||
+                  (wordIndex === currentWordIndex &&
+                    charIndex >= currentCharIndex);
 
-              const isCorrect =
-                !isWaiting && char === userInput[wordIndex][charIndex];
+                const isCorrect =
+                  !isWaiting && char === userInput[wordIndex][charIndex];
 
-              return (
-                <Letter
-                  key={charIndex}
-                  $correct={isCorrect}
-                  $waiting={isWaiting}
-                >
-                  {char}
-                </Letter>
-              );
-            })}
+                return (
+                  <Letter
+                    key={charIndex}
+                    $correct={isCorrect}
+                    $waiting={isWaiting}
+                  >
+                    {char}
+                  </Letter>
+                );
+              })}
 
-            {userInput[wordIndex] &&
-              userInput[wordIndex].length > word.length && (
-                <ExtraInput>
-                  {userInput[wordIndex].slice(word.length)}
-                </ExtraInput>
-              )}
-            <span style={{ minWidth: "13px" }}></span>
-          </Word>
+              {userInput[wordIndex] &&
+                userInput[wordIndex].length > word.length && (
+                  <ExtraInput>
+                    {userInput[wordIndex].slice(word.length)}
+                  </ExtraInput>
+                )}
+              <span style={{ minWidth: "13px" }}></span>
+            </Word>
+          </WordBox>
         ))}
       </StyledSlate>
     </>
@@ -191,9 +256,29 @@ const StyledSlate = styled.div`
   line-height: 1.4;
 `;
 
+const WordBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  color: #777777;
+  height: 40px;
+`;
+
+const WPMWord = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 12px;
+  color: #777777;
+  height: 20px;
+  min-height: 20px;
+`;
+
 const Word = styled.div`
   display: flex;
   flex-wrap: wrap;
+  margin-top: -8px;
 `;
 
 type LetterProps = {
@@ -211,5 +296,6 @@ const Letter = styled.span<LetterProps>`
 `;
 
 const ExtraInput = styled.span`
+  font-size: 24px;
   color: #ff0000;
 `;
