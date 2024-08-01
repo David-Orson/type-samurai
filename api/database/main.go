@@ -11,11 +11,11 @@ type DataBase struct {
 }
 
 func Setup() (DataBase, error) {
-	host := os.Getenv("DB_HOST")
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	dbname := os.Getenv("DB_NAME")
-	port := os.Getenv("DB_PORT")
+	host := getEnv("DB_HOST", "0.0.0.0")
+	user := getEnv("DB_USER", "root")
+	password := getEnv("DB_PASSWORD", "password")
+	dbname := getEnv("DB_NAME", "ts")
+	port := getEnv("DB_PORT", "33306")
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", user, password, host, port, dbname)
 	db, err := sql.Open("mysql", dsn)
@@ -43,4 +43,11 @@ func Setup() (DataBase, error) {
 	}
 
 	return DataBase{Sql: db}, nil
+}
+
+func getEnv(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
 }

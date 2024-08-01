@@ -19,11 +19,13 @@ func NewHandler(db *sql.DB) *Handler {
 func (h *Handler) Serve(port string, ready chan<- bool, cancel chan<- bool) {
 	mux := http.NewServeMux()
 
-	h.setupChildren(mux)
+	h.setupRoutes(mux)
+
+	corsMux := withCORS(mux)
 
 	server := &http.Server{
 		Addr:    ":" + port,
-		Handler: mux,
+		Handler: corsMux,
 	}
 
 	go func() {
@@ -35,6 +37,21 @@ func (h *Handler) Serve(port string, ready chan<- bool, cancel chan<- bool) {
 	ready <- true
 }
 
-func (h *Handler) setupChildren(mux *http.ServeMux) {
+func (h *Handler) setupRoutes(mux *http.ServeMux) {
 	h.words.setup(mux)
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

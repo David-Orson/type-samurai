@@ -14,7 +14,6 @@ func main() {
 		fmt.Printf("Error initializing database: %v\n", err)
 		return
 	}
-	fmt.Println("DB connected", db)
 
 	api := handler.NewHandler(db.Sql)
 	ready := make(chan bool, 1)

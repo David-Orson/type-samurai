@@ -6,11 +6,12 @@ const keys = ["Backspace", " ", ..."abcdefghijklmnopqrstuvwxyz".split("")];
 
 // props
 type SlateProps = {
-  postWord: (word: string, wpm: number, setId: number) => void;
-  wordset: { id: number; words: string[] };
+  postWord: (word: string, wpm: number) => void;
+  wordset: string[];
+  wordsetId: number;
 };
 
-export const Slate = ({ postWord, wordset }: SlateProps) => {
+export const Slate = ({ postWord, wordset, wordsetId }: SlateProps) => {
   // state
   const [testStarted, _setTestStarted] = useState(false);
   const [startTime, _setStartTime] = useState(0);
@@ -23,7 +24,6 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
   const [wpmWords, _setWpmWords] = useState<number[]>([]);
 
   // ref
-  const wordsetRef = useRef(wordset);
 
   const testStartedRef = useRef(testStarted);
   const startTimeRef = useRef(startTime);
@@ -81,11 +81,13 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
 
   const generateWords = () => {
     const tempWords: string[] = [];
+    console.log(wordset);
+    console.log(wordsetRef.current);
 
     for (let i = 0; i < 100; i++) {
       tempWords.push(
-        wordsetRef.current.words[
-          Math.floor(Math.random() * wordsetRef.current.words.length)
+        wordsetRef.current[
+          Math.floor(Math.random() * wordsetRef.current.length)
         ],
       );
     }
@@ -173,7 +175,7 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
     if (wpmWordsRef.current.length === 0 && isCompletedWordCorrect) {
       setWpmWords([wpm]);
       setWordStartTime(now);
-      postWord(targetWord, wpm, wordsetRef.current.id);
+      postWord(targetWord, wpm);
       return;
     }
 
@@ -181,10 +183,10 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
       const timeElapsed = (now - wordStartTimeRef.current) / 1000;
       const wpm = calcWpm(completedWord.length + 1, timeElapsed);
       setWpmWords([...wpmWordsRef.current, wpm]);
-      postWord(targetWord, wpm, wordsetRef.current.id);
+      postWord(targetWord, wpm);
     } else {
       setWpmWords([...wpmWordsRef.current, 0]);
-      postWord(targetWord, 0, wordsetRef.current.id);
+      postWord(targetWord, 0);
     }
     setWordStartTime(now);
   };
@@ -193,9 +195,11 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
     return Math.round(numOfCharacters / 5 / (timeElapsed / 60));
   };
 
+  // Update refs when props change
   useEffect(() => {
     wordsetRef.current = wordset;
-  }, [wordset]);
+    wordsetIdRef.current = wordsetId;
+  }, [wordset, wordsetId]);
 
   // lifecycle
   useEffect(() => {
