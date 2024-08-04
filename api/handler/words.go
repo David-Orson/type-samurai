@@ -11,11 +11,14 @@ import (
 )
 
 type Word struct {
-	ID            int    `json:"id"`
-	Lowercase     string `json:"lowercase"`
-	Attempts      string `json:"attempts"`
-	RecentAverage int    `json:"recentAverage"`
-	Wordset       int    `json:"wordset"`
+	ID             int    `json:"id"`
+	Lowercase      string `json:"lowercase"`
+	Attempts       string `json:"attempts"`
+	RecentAttempts string `json:"recentAttempts"`
+	RecentAverage  int    `json:"recentAverage"`
+	SuccessAverage int    `json:"successAverage"`
+	PR             int    `json:"pr"`
+	Wordset        int    `json:"wordset"`
 }
 
 type WordJSON struct {
@@ -29,11 +32,57 @@ type WordsHandler struct {
 }
 
 func (wh *WordsHandler) setup(mux *http.ServeMux) {
-	mux.HandleFunc("GET /words/{wordsetId}", wh.words)
+	mux.HandleFunc("GET /words/slow/{wordsetId}", wh.slowWords)
 	mux.HandleFunc("POST /word", wh.upsertWord)
+	mux.HandleFunc("GET /userwords/{wordsetId}", wh.userWords)
 }
 
-func (wh *WordsHandler) words(w http.ResponseWriter, r *http.Request) {
+func (wh *WordsHandler) userWords(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	pathParts := strings.Split(path, "/")
+	if len(pathParts) < 3 {
+		http.Error(w, "Missing wordsetId", http.StatusBadRequest)
+		return
+	}
+	wordsetIdStr := pathParts[2]
+	wordsetId, err := strconv.Atoi(wordsetIdStr)
+	if err != nil {
+		http.Error(w, "Invalid wordsetId", http.StatusBadRequest)
+		return
+	}
+	rows, err := wh.db.Query(`
+    SELECT id, lowercase, recentAttempts, recentAverage, successAverage, pr, wordset
+    FROM words
+    WHERE wordset = ?
+    ORDER BY recentAverage ASC
+  `, wordsetId)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		log.Printf("Database query error: %v", err)
+		return
+	}
+	defer rows.Close()
+	var words []Word
+	for rows.Next() {
+		var word Word
+		if err := rows.Scan(&word.ID, &word.Lowercase, &word.RecentAttempts, &word.RecentAverage, &word.SuccessAverage, &word.PR, &word.Wordset); err != nil {
+			http.Error(w, "Error scanning data", http.StatusInternalServerError)
+			return
+		}
+		words = append(words, word)
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, "Error iterating rows", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(words); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func (wh *WordsHandler) slowWords(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	pathParts := strings.Split(path, "/")
 
@@ -42,7 +91,7 @@ func (wh *WordsHandler) words(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wordsetIdStr := pathParts[2]
+	wordsetIdStr := pathParts[3]
 	wordsetId, err := strconv.Atoi(wordsetIdStr)
 	if err != nil {
 		http.Error(w, "Invalid wordsetId", http.StatusBadRequest)
@@ -50,10 +99,10 @@ func (wh *WordsHandler) words(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := wh.db.Query(`
-		SELECT id, lowercase, attempts, recentAverage, wordset
+		SELECT id, lowercase, recentAttempts, recentAverage, successAverage, pr, wordset
 		FROM words
 		WHERE wordset = ?
-		ORDER BY recentAverage ASC
+		ORDER BY pr DESC
 		LIMIT 25
 	`, wordsetId)
 	if err != nil {
@@ -66,7 +115,7 @@ func (wh *WordsHandler) words(w http.ResponseWriter, r *http.Request) {
 	var words []Word
 	for rows.Next() {
 		var word Word
-		if err := rows.Scan(&word.ID, &word.Lowercase, &word.Attempts, &word.RecentAverage, &word.Wordset); err != nil {
+		if err := rows.Scan(&word.ID, &word.Lowercase, &word.RecentAttempts, &word.RecentAverage, &word.SuccessAverage, &word.PR, &word.Wordset); err != nil {
 			http.Error(w, "Error scanning data", http.StatusInternalServerError)
 			return
 		}
@@ -97,10 +146,10 @@ func (wh *WordsHandler) upsertWord(w http.ResponseWriter, r *http.Request) {
 
 	lowercaseWord := strings.ToLower(word.Word)
 
+	var pr int
 	var existingAttemptsJSON string
-	var existingRecentAverage int
-	row := wh.db.QueryRow("SELECT attempts, recentAverage FROM words WHERE lowercase = ? AND wordset = ?", lowercaseWord, word.Wordset)
-	err = row.Scan(&existingAttemptsJSON, &existingRecentAverage)
+	row := wh.db.QueryRow("SELECT attempts, pr FROM words WHERE lowercase = ? AND wordset = ?", lowercaseWord, word.Wordset)
+	err = row.Scan(&existingAttemptsJSON, &pr)
 
 	var existingAttempts []int
 	if err == sql.ErrNoRows {
@@ -116,31 +165,70 @@ func (wh *WordsHandler) upsertWord(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var recentAttempts []int
-	recentAttempts = append(existingAttempts, word.WPM)
-	existingAttempts = append(existingAttempts, word.WPM)
-
-	if len(existingAttempts) > 10 {
-		recentAttempts = existingAttempts[len(existingAttempts)-10:]
+	// attempts
+	attempts := append(existingAttempts, word.WPM)
+	attemptsJSON, err := json.Marshal(attempts)
+	if err != nil {
+		http.Error(w, "Failed to marshal attempts", http.StatusInternalServerError)
+		return
 	}
 
+	// recentAttempts
+	var recentAttempts []int
+	recencyDefinition := 20
+
+	if len(attempts) > recencyDefinition {
+		recentAttempts = attempts[len(attempts)-recencyDefinition:]
+	} else {
+		recentAttempts = attempts
+	}
+	recentAttemptsJSON, err := json.Marshal(recentAttempts)
+	if err != nil {
+		http.Error(w, "Failed to marshal recent attempts", http.StatusInternalServerError)
+	}
+
+	unmarshalledRecentAttempts := []int{}
+	err = json.Unmarshal(recentAttemptsJSON, &unmarshalledRecentAttempts)
+	if err != nil {
+		http.Error(w, "Failed to unmarshal recent attempts", http.StatusInternalServerError)
+	}
+
+	// recentAverage
 	total := 0
 	for _, attempt := range recentAttempts {
 		total += attempt
 	}
 	recentAverage := total / len(recentAttempts)
 
-	attemptsJSON, err := json.Marshal(existingAttempts)
-	if err != nil {
-		http.Error(w, "Failed to marshal attempts", http.StatusInternalServerError)
-		return
+	// success Average
+	var successfulAttempts []int
+	for _, attempt := range attempts {
+		if attempt > 0 {
+			successfulAttempts = append(successfulAttempts, attempt)
+		}
+	}
+
+	total = 0
+	for _, attempt := range successfulAttempts {
+		total += attempt
+	}
+	var successfulAverage int
+	if total == 0 {
+		successfulAverage = 0
+	} else {
+		successfulAverage = total / len(successfulAttempts)
+	}
+
+	// pr
+	if word.WPM > pr {
+		pr = word.WPM
 	}
 
 	_, err = wh.db.Exec(`
-		INSERT INTO words (lowercase, attempts, recentAverage, wordset)
-		VALUES (?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE attempts = VALUES(attempts), recentAverage = VALUES(recentAverage)
-	`, lowercaseWord, attemptsJSON, recentAverage, word.Wordset)
+		INSERT INTO words (lowercase, attempts, recentAttempts, recentAverage, successAverage, pr, wordset)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE attempts = VALUES(attempts), recentAttempts = VALUES(recentAttempts), recentAverage = VALUES(recentAverage), successAverage = VALUES(successAverage), pr = VALUES(pr)
+	`, lowercaseWord, attemptsJSON, recentAttemptsJSON, recentAverage, successfulAverage, pr, word.Wordset)
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return

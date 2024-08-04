@@ -4,13 +4,27 @@ import styled from "styled-components";
 
 const keys = ["Backspace", " ", ..."abcdefghijklmnopqrstuvwxyz".split("")];
 
+// types
+type NewPr = {
+  lowercase: string;
+  wpm: number;
+  wordIndex?: number;
+};
+
 // props
 type SlateProps = {
+  getUserWords: (wordsetId: number) => void;
+  userWords: any;
   postWord: (word: string, wpm: number, setId: number) => void;
   wordset: { id: number; words: string[] };
 };
 
-export const Slate = ({ postWord, wordset }: SlateProps) => {
+export const Slate = ({
+  getUserWords,
+  userWords,
+  postWord,
+  wordset,
+}: SlateProps) => {
   // state
   const [testStarted, _setTestStarted] = useState(false);
   const [startTime, _setStartTime] = useState(0);
@@ -21,9 +35,11 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
   const [currentCharIndex, _setCurrentCharIndex] = useState(0);
   const [wpm, setWpm] = useState(0);
   const [wpmWords, _setWpmWords] = useState<number[]>([]);
+  const [newPrs, _setNewPrs] = useState<NewPr[]>([]);
 
   // ref
   const wordsetRef = useRef(wordset);
+  const userWordsRef = useRef(userWords);
 
   const testStartedRef = useRef(testStarted);
   const startTimeRef = useRef(startTime);
@@ -33,6 +49,7 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
   const currentWordIndexRef = useRef(currentWordIndex);
   const currentCharIndexRef = useRef(currentCharIndex);
   const wpmWordsRef = useRef(wpmWords);
+  const newPrsRef = useRef(newPrs);
 
   const setTestStarted = (b: boolean) => {
     testStartedRef.current = b;
@@ -66,6 +83,10 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
     wpmWordsRef.current = a;
     _setWpmWords(a);
   };
+  const setNewPrs = (a: NewPr[]) => {
+    newPrsRef.current = a;
+    _setNewPrs(a);
+  };
 
   // methods
   const resetTest = () => {
@@ -77,6 +98,8 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
     setWpmWords([]);
     setWordStartTime(0);
     generateWords();
+    getUserWords(wordsetRef.current.id);
+    setNewPrs([]);
   };
 
   const generateWords = () => {
@@ -94,6 +117,7 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
   };
 
   const handleKeyPress = (e: KeyboardEvent) => {
+    e.preventDefault();
     if (e.key === "Control") return resetTest();
     if (!keys.includes(e.key)) return;
 
@@ -173,7 +197,7 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
     if (wpmWordsRef.current.length === 0 && isCompletedWordCorrect) {
       setWpmWords([wpm]);
       setWordStartTime(now);
-      postWord(targetWord, wpm, wordsetRef.current.id);
+      handlePr(targetWord, wpm);
       return;
     }
 
@@ -182,9 +206,11 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
       const wpm = calcWpm(completedWord.length + 1, timeElapsed);
       setWpmWords([...wpmWordsRef.current, wpm]);
       postWord(targetWord, wpm, wordsetRef.current.id);
+      handlePr(targetWord, wpm);
     } else {
       setWpmWords([...wpmWordsRef.current, 0]);
       postWord(targetWord, 0, wordsetRef.current.id);
+      handlePr(targetWord, 0);
     }
     setWordStartTime(now);
   };
@@ -193,9 +219,29 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
     return Math.round(numOfCharacters / 5 / (timeElapsed / 60));
   };
 
+  const handlePr = (targetWord: string, wpm: number) => {
+    const newPrIndex = newPrsRef.current.findIndex(
+      (pr) => pr.lowercase === targetWord,
+    );
+    if (newPrIndex !== -1) {
+      if (newPrsRef.current[newPrIndex].wpm > wpm) return;
+      newPrsRef.current.splice(newPrIndex, 1);
+    }
+    setNewPrs([
+      ...newPrsRef.current,
+      {
+        lowercase: targetWord,
+        wpm: wpm + 1,
+        wordIndex: currentWordIndexRef.current - 1,
+      },
+    ]);
+  };
+
+  // watchers
   useEffect(() => {
     wordsetRef.current = wordset;
-  }, [wordset]);
+    userWordsRef.current = userWords;
+  }, [wordset, userWords]);
 
   // lifecycle
   useEffect(() => {
@@ -207,14 +253,48 @@ export const Slate = ({ postWord, wordset }: SlateProps) => {
     };
   }, []);
 
+  // markup
+  const prMarkup = (wpm: number, word: string, wordIndex: number) => {
+    if (wordIndex === 0) return;
+    const markup = (
+      <span style={{ fontSize: "12px", marginTop: "-4px" }}>🚀</span>
+    );
+
+    if (!wpm) return;
+
+    const userWord = userWords?.find((w: any) => w.lowercase === word);
+    const newPr = newPrs?.find((w: any) => w.lowercase === word);
+
+    if (newPr) {
+      if (newPr.wordIndex === wordIndex) {
+        if (!userWord) return markup;
+        if (wpm > userWord?.pr) return markup;
+      }
+    }
+
+    if (wpm > userWord?.wpm && wpm > (newPr?.wpm || 0)) {
+      return;
+    }
+  };
+
   return (
     <>
-      <div>WPM: {wpm}</div>
       <StyledSlate>
         {words.map((word, wordIndex) => (
           <WordBox key={"box" + wordIndex}>
-            <WPMWord key={"wpm" + wordIndex}>
+            <WPMWord key={"wpm" + wordIndex} $wpm={wpmWords[wordIndex]}>
               {wpmWords[wordIndex] > 0 && wpmWords[wordIndex]}
+              {prMarkup(wpmWords[wordIndex], word, wordIndex)}
+              {wpmWords[wordIndex] >= 180 && (
+                <span
+                  style={{
+                    fontSize: "12px",
+                    marginTop: "-4px",
+                  }}
+                >
+                  ⭐
+                </span>
+              )}
             </WPMWord>
             <Word key={wordIndex}>
               {word.split("").map((char, charIndex) => {
@@ -257,13 +337,13 @@ const StyledSlate = styled.div`
   flex-wrap: wrap;
   align-content: flex-start;
 
-  height: 300px;
+  min-height: 300px;
   width: 80%;
   overflow: hidden;
   border-radius: 8px;
   padding: 1rem;
 
-  background: linear-gradient(90deg, #25262d 0%, #14141a 60%);
+  background: linear-gradient(90deg, #25262d 0%, #26262d 60%);
   color: #c6c8d1;
 
   font-size: 24px;
@@ -277,17 +357,98 @@ const WordBox = styled.div`
   align-items: center;
   font-size: 12px;
   color: #777777;
-  height: 40px;
+  height: 50px;
 `;
 
-const WPMWord = styled.div`
+type WPMWordProps = {
+  $wpm: number;
+};
+
+const WPMWord = styled.div<WPMWordProps>`
   display: flex;
   justify-content: center;
   align-items: center;
-  font-size: 12px;
-  color: #777777;
+  font-size: 14px;
   height: 20px;
   min-height: 20px;
+  font-weight: 600;
+  color: ${(props) => {
+    if (props.$wpm !== 0 && props.$wpm < 60) {
+      // brown
+      return "#a17261";
+    }
+    if (props.$wpm < 80) {
+      // red
+      return "#d11715";
+    }
+    if (props.$wpm < 100) {
+      // orange
+      return "#ff520d";
+    }
+    if (props.$wpm < 120) {
+      // yellow
+      return "#C4CA20";
+    }
+    if (props.$wpm < 140) {
+      // green
+      return "#288933";
+    }
+    if (props.$wpm < 160) {
+      // blue
+      return "#31A9AD";
+    }
+    if (props.$wpm < 180) {
+      // purple
+      return "#D303C6";
+    }
+    return "#ffffff";
+  }};
+
+  ${(props) => {
+    if (props.$wpm < 180) return;
+    if (props.$wpm < 200) {
+      // red
+      return `background: linear-gradient(190deg, #e43235 40%, #7c191b 65%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 225) {
+      // orange
+      return `background: linear-gradient(190deg, #dc982c 20%, #ef4a18 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 250) {
+      // yellow
+      return `background: linear-gradient(190deg, #e7c920 20%, #e0d38a 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 300) {
+      // green
+      return `background: linear-gradient(190deg, #35ad26 20%, #34805c 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 400) {
+      // sky
+      return `background: linear-gradient(190deg, #2fa3c3 20%, #7c3488 85%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    `;
+    }
+    if (props.$wpm >= 400) {
+      // pink
+      return `background: linear-gradient(190deg, #ae5285 10%, #ea2858 70%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    `;
+    }
+  }}
 `;
 
 const Word = styled.div`
@@ -306,8 +467,9 @@ const Letter = styled.span<LetterProps>`
   font-weight: 400;
   line-height: 1.4;
 
-  color: ${(props) =>
-    props.$correct ? "#00ff00" : props.$waiting ? "#aaaaaa" : "#ff0000"};
+  color: ${(props) => {
+    return props.$correct ? "#ffffff" : props.$waiting ? "#aaaaaa" : "#ff0000";
+  }};
 `;
 
 const ExtraInput = styled.span`
