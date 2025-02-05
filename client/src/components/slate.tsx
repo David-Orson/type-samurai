@@ -105,7 +105,7 @@ export const Slate = ({
   const generateWords = () => {
     const tempWords: string[] = [];
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 50; i++) {
       tempWords.push(
         wordsetRef.current.words[
           Math.floor(Math.random() * wordsetRef.current.words.length)
@@ -117,6 +117,7 @@ export const Slate = ({
   };
 
   const handleKeyPress = (e: KeyboardEvent) => {
+    const now = performance.now();
     e.preventDefault();
     if (e.key === "Control") return resetTest();
     if (!keys.includes(e.key)) return;
@@ -136,6 +137,7 @@ export const Slate = ({
     } else {
       handleCharacterInput(e.key, previousWords, currentWord);
     }
+    console.log(performance.now() - now);
   };
 
   const handleBackspace = (currentWord: string, previousWords: string[]) => {
@@ -151,10 +153,12 @@ export const Slate = ({
   };
 
   const handleSpace = (previousWords: string[], currentWord: string) => {
+    const now = performance.now();
     setUserInput([...previousWords, currentWord, ""]);
     setCurrentWordIndex(currentWordIndexRef.current + 1);
     setCurrentCharIndex(0);
     processWpm();
+    console.log(performance.now() - now);
   };
 
   const handleCharacterInput = (
@@ -279,8 +283,12 @@ export const Slate = ({
 
   return (
     <>
+      {(wpmWordsRef.current.length > 0 &&
+        wpmWordsRef.current.reduce((acc, curr) => acc + curr, 0) /
+          wpmWordsRef.current.length) ||
+        0}
       <StyledSlate>
-        {words.map((word, wordIndex) => (
+        {words?.map((word, wordIndex) => (
           <WordBox key={"box" + wordIndex}>
             <WPMWord key={"wpm" + wordIndex} $wpm={wpmWords[wordIndex]}>
               {wpmWords[wordIndex] > 0 && wpmWords[wordIndex]}
@@ -297,7 +305,7 @@ export const Slate = ({
               )}
             </WPMWord>
             <Word key={wordIndex}>
-              {word.split("").map((char, charIndex) => {
+              {word.split("")?.map((char, charIndex) => {
                 const isWaiting =
                   wordIndex > currentWordIndex ||
                   (wordIndex === currentWordIndex &&
@@ -311,6 +319,16 @@ export const Slate = ({
                     key={charIndex}
                     $correct={isCorrect}
                     $waiting={isWaiting}
+                    $wpm={
+                      userWordsRef.current.find(
+                        (word: any) => word.lowercase === words[wordIndex],
+                      )?.pr
+                    }
+                    $new={
+                      !userWordsRef.current.find(
+                        (word: any) => word.lowercase === words[wordIndex],
+                      )
+                    }
                   >
                     {char}
                   </Letter>
@@ -351,14 +369,14 @@ const StyledSlate = styled.div`
   line-height: 1.4;
 `;
 
-const WordBox = styled.div`
+const WordBox = React.memo(styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
   font-size: 12px;
   color: #777777;
   height: 50px;
-`;
+`);
 
 type WPMWordProps = {
   $wpm: number;
@@ -459,18 +477,150 @@ const Word = styled.div`
 
 type LetterProps = {
   $correct: boolean;
+  $wpm: number;
   $waiting: boolean;
+  $new: boolean;
 };
 
-const Letter = styled.span<LetterProps>`
+const Letter = React.memo(styled.span<LetterProps>`
   font-size: 24px;
   font-weight: 400;
   line-height: 1.4;
-
   color: ${(props) => {
+    if (props.$new && props.$waiting) return "#88cccc";
+    if (!props.$waiting)
+      return props.$correct
+        ? "#ffffff"
+        : props.$waiting
+          ? "#aaaaaa"
+          : "#ff0000";
+    if (props.$wpm !== 0 && props.$wpm < 60) {
+      // brown
+      return "#a17261";
+    }
+    if (props.$wpm < 80) {
+      // red
+      return "#d11715";
+    }
+    if (props.$wpm < 100) {
+      // orange
+      return "#ff520d";
+    }
+    if (props.$wpm < 120) {
+      // yellow
+      return "#C4CA20";
+    }
+    if (props.$wpm < 140) {
+      // green
+      return "#288933";
+    }
+    if (props.$wpm < 160) {
+      // blue
+      return "#31A9AD";
+    }
+    if (props.$wpm < 180) {
+      // purple
+      return "#D303C6";
+    }
+    return "#ffffff";
+  }};
+
+  ${(props) => {
+    if (props.$wpm < 180 || !props.$waiting) return;
+    if (props.$wpm < 200) {
+      // red
+      return `background: linear-gradient(190deg, #e43235 40%, #7c191b 65%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 225) {
+      // orange
+      return `background: linear-gradient(190deg, #dc982c 20%, #ef4a18 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 250) {
+      // yellow
+      return `background: linear-gradient(190deg, #e7c920 20%, #e0d38a 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 300) {
+      // green
+      return `background: linear-gradient(190deg, #35ad26 20%, #34805c 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 400) {
+      // sky
+      return `background: linear-gradient(190deg, #2fa3c3 20%, #7c3488 85%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    `;
+    }
+    if (props.$wpm >= 400) {
+      // pink
+      return `background: linear-gradient(190deg, #ae5285 10%, #ea2858 70%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    `;
+    }
+  }}
+`);
+/*  color: ${() => {
+
+    if (props.$wpm < 180) return;
+    if (props.$wpm < 200) {
+      // red
+      return `background: linear-gradient(190deg, #e43235 40%, #7c191b 65%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 225) {
+      // orange
+      return `background: linear-gradient(190deg, #dc982c 20%, #ef4a18 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 250) {
+      // yellow
+      return `background: linear-gradient(190deg, #e7c920 20%, #e0d38a 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 300) {
+      // green
+      return `background: linear-gradient(190deg, #35ad26 20%, #34805c 50%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+`;
+    }
+    if (props.$wpm < 400) {
+      // sky
+      return `background: linear-gradient(190deg, #2fa3c3 20%, #7c3488 85%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    `;
+    }
+    if (props.$wpm >= 400) {
+      // pink
+      return `background: linear-gradient(190deg, #ae5285 10%, #ea2858 70%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    `;
+    }
+  
+    if (props.$new && props.$waiting) return "#88cccc";
     return props.$correct ? "#ffffff" : props.$waiting ? "#aaaaaa" : "#ff0000";
   }};
-`;
+*/
 
 const ExtraInput = styled.span`
   font-size: 24px;

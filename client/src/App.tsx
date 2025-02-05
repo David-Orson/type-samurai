@@ -39,7 +39,7 @@ export const App = () => {
     const res = await axios.get(
       "http://localhost:8080/words/slow/" + wordset.id,
     );
-    const slowWords = res.data.map((word: any) => word.lowercase);
+    const slowWords = res.data?.map((word: any) => word.lowercase);
     setWordset({ id: wordset.id, words: slowWords });
   };
 
@@ -99,7 +99,7 @@ export const App = () => {
       }
     });
 
-    setAccuracy(successAttempts / attempts.length || 0);
+    setAccuracy(successAttempts / attempts?.length || 0);
     setAveragePr(total / i);
     setAverageRecentAverage(recentTotal / i);
     setBadges(badges);
@@ -107,7 +107,17 @@ export const App = () => {
 
   const toggleSlowWords = () => {
     if (isSlowWords) {
-      setWordset({ id: 1, words: eng200.split(" ") });
+      console.log(wordset.id);
+      getUserWords(wordset.id);
+      if (wordset.id === 2) {
+        setWordset({ id: 2, words: eng1k.split(" ") });
+      } else if (wordset.id === 3) {
+        setWordset({ id: 3, words: eng5k.toLowerCase().split(" ") });
+      } else if (wordset.id === 4) {
+        setWordset({ id: 4, words: eng10k.toLowerCase().split(" ") });
+      } else {
+        setWordset({ id: 1, words: eng200.split(" ") });
+      }
     } else {
       getSlowWords();
     }
@@ -186,7 +196,7 @@ export const App = () => {
         wordset={wordset}
       />
       <div>
-        {userWords?.length || 0} / {wordset.words.length}
+        {userWords?.length || 0} / {wordset.words?.length}
       </div>
     </Body>
   );
